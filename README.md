@@ -18,23 +18,23 @@ AI Ad Maker is a Gen AI mentorship project designed specifically for small shop 
 ## Screenshots
 
 ### 1. Step 1: Upload and Product Details
-![Upload Screen](backend/screenshots/Create Next App and 1 more page - Personal - Microsoft​ Edge 10_09_2026 6_52_37 am.png)
+![Upload Screen](backend/screenshots/01-upload.png)
 *The user uploads a product photo, enters a short description, and selects a language (English or Urdu).*
 
 ### 2. Step 2: Review Script
-![Script Approval](backend/screenshots/Create Next App and 1 more page - Personal - Microsoft​ Edge 10_09_2026 7_14_36 am.png)
+![Script Approval](backend/screenshots/02-script-approval.png)
 *The AI generates a marketing script and extracts on-screen text highlights. The user can approve it or try again.*
 
 ### 3. Step 3: Review Voice
-![Voice Approval](backend/screenshots/Create Next App and 1 more page - Personal - Microsoft​ Edge 10_09_2026 7_15_24 am.png)
+![Voice Approval](backend/screenshots/03-voice-approval.png)
 *The app generates an AI voiceover from the approved script. The user listens to the preview and can regenerate if needed.*
 
 ### 4. Step 4: Ready to Render
-![Render Screen](backend/screenshots/Create Next App and 1 more page - Personal - Microsoft​ Edge 10_09_2026 7_15_36 am.png)
+![Render Screen](backend/screenshots/04-render-screen.png)
 *With script and voice approved, the app is ready to combine the photo, audio, and visual effects into a final video.*
 
 ### 5. Final Result
-![Final Video](backend/screenshots/Create Next App and 1 more page - Personal - Microsoft​ Edge 10_09_2026 7_17_52 am.png)
+![Final Video](backend/screenshots/05-final-video.png)
 *The completed advertisement video is presented to the user, ready to be downloaded as an MP4 or regenerated.*
 
 ## Tech Stack
