@@ -4,6 +4,7 @@ load_dotenv()
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
 
 app = FastAPI(title="AI Ad Maker API")
 
@@ -48,27 +49,49 @@ async def api_generate_script(request: ScriptRequest):
 class VoiceRequest(BaseModel):
     script: str = Field(..., min_length=1)
     language: str = "english"
+    audio_mode: str = "voice"
+    music_track: Optional[str] = None
 
 @app.post("/api/generate-voice")
 async def api_generate_voice(request: VoiceRequest):
     try:
+        if request.audio_mode == "music" and request.music_track:
+            import os
+            track_path = os.path.join("assets", "music", f"{request.music_track}.mp3")
+            if not os.path.exists(track_path):
+                raise HTTPException(status_code=400, detail="Invalid music track selected.")
+            with open(track_path, "rb") as f:
+                audio_bytes = f.read()
+            return Response(content=audio_bytes, media_type="audio/mpeg")
+            
         audio_bytes = await generate_voice(request.script, request.language)
         return Response(content=audio_bytes, media_type="audio/mpeg")
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/generate-ad-video")
 async def api_generate_ad_video(
-    image: UploadFile = File(...),
+    image: UploadFile = File(None),
+    video: UploadFile = File(None),
     audio: UploadFile = File(...),
     highlights: str = Form(...)  # JSON string array
 ):
     try:
-        image_bytes = await image.read()
+        image_bytes = await image.read() if image else None
+        video_bytes = await video.read() if video else None
         audio_bytes = await audio.read()
         
-        if not image_bytes or not audio_bytes:
-            raise HTTPException(status_code=400, detail="Image and audio files must not be empty.")
+        if not image_bytes and not video_bytes:
+            raise HTTPException(status_code=400, detail="Must provide either an image or a video file.")
+        if image_bytes and video_bytes:
+            raise HTTPException(status_code=400, detail="Cannot provide both an image and a video file.")
+        if not audio_bytes:
+            raise HTTPException(status_code=400, detail="Audio file must not be empty.")
+            
+        if video and video.size and video.size > 50 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="Video file exceeds 50MB limit.")
             
         try:
             parsed_highlights = json.loads(highlights)
@@ -77,8 +100,35 @@ async def api_generate_ad_video(
         except json.JSONDecodeError:
             raise HTTPException(status_code=400, detail="Invalid JSON for highlights.")
             
-        video_bytes = generate_video(image_bytes, audio_bytes, parsed_highlights)
-        return Response(content=video_bytes, media_type="video/mp4")
+        output_video_bytes = generate_video(
+            image_bytes=image_bytes,
+            video_bytes=video_bytes,
+            audio_bytes=audio_bytes,
+            highlights=parsed_highlights
+        )
+        return Response(content=output_video_bytes, media_type="video/mp4")
+    except HTTPException as he:
+        raise he
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail=str(e))
 
+from services.motion_service import generate_motion_video
+
+@app.post("/api/generate-motion-video")
+async def api_generate_motion_video(image: UploadFile = File(...)):
+    try:
+        image_bytes = await image.read()
+        if not image_bytes:
+            raise HTTPException(status_code=400, detail="Image file is required.")
+        
+        video_bytes = await generate_motion_video(image_bytes)
+        return Response(content=video_bytes, media_type="video/mp4")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(
+            status_code=503, 
+            detail="Automatic motion video generation is currently unavailable — all free providers are down or busy right now."
+        )

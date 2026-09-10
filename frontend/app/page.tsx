@@ -8,8 +8,17 @@ export default function Home() {
   const [step, setStep] = useState<number>(1);
   const [productDescription, setProductDescription] = useState("");
   const [language, setLanguage] = useState("english");
+  
+  // Input modes
+  const [inputType, setInputType] = useState<"image" | "image_motion" | "video">("image");
+  const [audioMode, setAudioMode] = useState<"voice" | "bgm">("voice");
+  const [musicTrack, setMusicTrack] = useState<"upbeat" | "calm" | "corporate">("upbeat");
+  
+  // File states
   const [image, setImage] = useState<File | null>(null);
   const [imagePreview, setImagePreview] = useState<string>("");
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoPreview, setVideoPreview] = useState<string>("");
 
   const [script, setScript] = useState("");
   const [highlights, setHighlights] = useState<string[]>([]);
@@ -25,21 +34,27 @@ export default function Home() {
   
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
-      setImage(file);
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setImagePreview(e.target?.result as string);
-      };
-      reader.readAsDataURL(file);
+      if (inputType === "image" || inputType === "image_motion") {
+        setImage(file);
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          setImagePreview(e.target?.result as string);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setVideoFile(file);
+        const url = URL.createObjectURL(file);
+        setVideoPreview(url);
+      }
     }
   };
 
   const handleGenerateScript = async () => {
-    if (!productDescription || !image) {
-      setError("Please provide a product description and an image.");
+    if (!productDescription || ((inputType === "image" || inputType === "image_motion") ? !image : !videoFile)) {
+      setError("Please provide a product description and an upload.");
       return;
     }
     setError("");
@@ -71,13 +86,19 @@ export default function Home() {
   const handleGenerateVoice = async () => {
     setError("");
     setIsGenerating(true);
-    setStatusMessage("Generating voice narration...");
+    setStatusMessage(audioMode === "bgm" ? "Preparing background audio..." : "Generating voice narration...");
     
     try {
+      const targetLang = audioMode === "bgm" ? "silent" : language;
       const response = await fetch(`${API_URL}/api/generate-voice`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ script, language }),
+        body: JSON.stringify({ 
+          script, 
+          language: targetLang,
+          audio_mode: audioMode === "bgm" ? "music" : "voice",
+          music_track: audioMode === "bgm" ? musicTrack : null
+        }),
       });
       
       if (!response.ok) {
@@ -97,8 +118,8 @@ export default function Home() {
   };
 
   const handleGenerateVideo = async () => {
-    if (!image || !audioBlob) {
-      setError("Missing image or audio.");
+    if (((inputType === "image" || inputType === "image_motion") && !image) || (inputType === "video" && !videoFile) || !audioBlob) {
+      setError("Missing input file or audio.");
       return;
     }
     
@@ -107,19 +128,46 @@ export default function Home() {
     setStatusMessage("Preparing files...");
     
     try {
+      let finalVideoFile = videoFile;
+      
+      if (inputType === "image_motion" && image) {
+        setStatusMessage("Auto-generating motion video from your image (this may take 1-2 minutes)...");
+        const motionFormData = new FormData();
+        motionFormData.append("image", image);
+        
+        const motionResponse = await fetch(`${API_URL}/api/generate-motion-video`, {
+          method: "POST",
+          body: motionFormData,
+        });
+        
+        if (!motionResponse.ok) {
+          const errorData = await motionResponse.json().catch(() => null);
+          throw new Error(errorData?.detail || "Automatic motion video generation is currently unavailable — all free providers are down or busy right now.");
+        }
+        
+        const motionBlob = await motionResponse.blob();
+        finalVideoFile = new File([motionBlob], "generated_motion.mp4", { type: "video/mp4" });
+      }
+
       const formData = new FormData();
-      formData.append("image", image);
+      if (inputType === "image" && image) {
+        formData.append("image", image);
+      } else if ((inputType === "video" || inputType === "image_motion") && finalVideoFile) {
+        formData.append("video", finalVideoFile);
+      }
+      
       formData.append("audio", audioBlob);
       formData.append("highlights", JSON.stringify(highlights));
       
-      setStatusMessage("Sending to server and rendering video with FFmpeg (this may take a minute)...");
+      setStatusMessage("Sending to server and rendering final video with FFmpeg (this may take a minute)...");
       const response = await fetch(`${API_URL}/api/generate-ad-video`, {
         method: "POST",
         body: formData,
       });
       
       if (!response.ok) {
-        throw new Error("Failed to generate video. Please try again.");
+        const errorData = await response.json().catch(() => null);
+        throw new Error(errorData?.detail || "Failed to generate video. Please try again.");
       }
       
       setStatusMessage("Validating output...");
@@ -139,6 +187,8 @@ export default function Home() {
     setProductDescription("");
     setImage(null);
     setImagePreview("");
+    setVideoFile(null);
+    setVideoPreview("");
     setScript("");
     setHighlights([]);
     setAudioBlob(null);
@@ -177,6 +227,40 @@ export default function Home() {
               <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
                 <h2 className="text-2xl font-bold mb-4">Step 1: Product Details</h2>
                 
+                {/* Input Toggle */}
+                <div className="flex bg-neutral-800 rounded-lg p-1 flex-col md:flex-row gap-1">
+                  <button 
+                    className={`flex-1 py-2 px-4 rounded-md font-medium text-sm transition-all ${inputType === "image" ? "bg-neutral-700 text-white shadow" : "text-neutral-400 hover:text-white"}`}
+                    onClick={() => setInputType("image")}
+                  >
+                    Use Photo (auto zoom effect)
+                  </button>
+                  <button 
+                    className={`flex-1 py-2 px-4 rounded-md font-medium text-sm transition-all ${inputType === "image_motion" ? "bg-purple-700 text-white shadow" : "text-neutral-400 hover:text-white"}`}
+                    onClick={() => setInputType("image_motion")}
+                  >
+                    Auto-generate motion with AI ✨
+                  </button>
+                  <button 
+                    className={`flex-1 py-2 px-4 rounded-md font-medium text-sm transition-all ${inputType === "video" ? "bg-neutral-700 text-white shadow" : "text-neutral-400 hover:text-white"}`}
+                    onClick={() => setInputType("video")}
+                  >
+                    Upload Your Own Video Clip
+                  </button>
+                </div>
+
+                {inputType === "video" && (
+                  <div className="bg-purple-900/20 border border-purple-500/30 rounded-lg p-4 text-sm text-purple-200">
+                    <p className="mb-2 font-medium">💡 Generate a short video of your product using a free tool like:</p>
+                    <div className="flex space-x-4">
+                      <a href="https://klingai.com" target="_blank" rel="noreferrer" className="text-purple-400 hover:text-purple-300 underline">Kling AI</a>
+                      <a href="https://lumalabs.ai/dream-machine" target="_blank" rel="noreferrer" className="text-purple-400 hover:text-purple-300 underline">Luma Dream Machine</a>
+                      <a href="https://pika.art" target="_blank" rel="noreferrer" className="text-purple-400 hover:text-purple-300 underline">Pika</a>
+                    </div>
+                    <p className="mt-2 text-neutral-400 text-xs">Download the result and upload it below. We'll add the audio and text overlays automatically.</p>
+                  </div>
+                )}
+
                 <div 
                   className="border-2 border-dashed border-neutral-700 rounded-xl p-8 text-center cursor-pointer hover:border-purple-500/50 hover:bg-neutral-800/50 transition-all flex flex-col items-center justify-center min-h-64"
                   onClick={() => fileInputRef.current?.click()}
@@ -185,18 +269,20 @@ export default function Home() {
                     type="file" 
                     ref={fileInputRef} 
                     className="hidden" 
-                    accept="image/*"
-                    onChange={handleImageUpload}
+                    accept={inputType === "image" || inputType === "image_motion" ? "image/*" : "video/*"}
+                    onChange={handleFileUpload}
                   />
-                  {imagePreview ? (
+                  {(inputType === "image" || inputType === "image_motion") && imagePreview ? (
                     <img src={imagePreview} alt="Preview" className="max-h-64 rounded-lg object-contain shadow-lg" />
+                  ) : inputType === "video" && videoPreview ? (
+                    <video src={videoPreview} className="max-h-64 rounded-lg object-contain shadow-lg" controls loop muted />
                   ) : (
                     <>
                       <div className="w-16 h-16 bg-neutral-800 rounded-full flex items-center justify-center mb-4">
                         <svg className="w-8 h-8 text-neutral-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
                       </div>
-                      <p className="text-neutral-300 font-medium">Click to upload product photo</p>
-                      <p className="text-neutral-500 text-sm mt-2">JPG or PNG</p>
+                      <p className="text-neutral-300 font-medium">Click to upload {inputType === "image" ? "product photo" : "product video"}</p>
+                      <p className="text-neutral-500 text-sm mt-2">{inputType === "image" ? "JPG or PNG" : "MP4, WebM, etc. (max 50MB)"}</p>
                     </>
                   )}
                 </div>
@@ -230,7 +316,7 @@ export default function Home() {
 
                 <button 
                   onClick={handleGenerateScript}
-                  disabled={!image || !productDescription || isGenerating}
+                  disabled={(inputType === "image" ? !image : !videoFile) || !productDescription || isGenerating}
                   className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-500 hover:to-pink-500 text-white font-bold py-4 px-8 rounded-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center mt-8"
                 >
                   {isGenerating ? (
@@ -274,7 +360,7 @@ export default function Home() {
                     {isGenerating ? "Regenerating..." : "Try Again"}
                   </button>
                   <button 
-                    onClick={handleGenerateVoice}
+                    onClick={() => setStep(3)}
                     disabled={isGenerating}
                     className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-medium py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transition-all"
                   >
@@ -287,13 +373,57 @@ export default function Home() {
             {/* STEP 3: VOICE */}
             {step === 3 && (
               <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
-                <h2 className="text-2xl font-bold mb-4">Step 3: Review Voice</h2>
+                <h2 className="text-2xl font-bold mb-4">Step 3: Review Audio</h2>
                 
+                <div className="flex bg-neutral-800 rounded-lg p-1 mb-6">
+                  <button 
+                    className={`flex-1 py-2 px-4 rounded-md font-medium text-sm transition-all ${audioMode === "voice" ? "bg-neutral-700 text-white shadow" : "text-neutral-400 hover:text-white"}`}
+                    onClick={() => { setAudioMode("voice"); setAudioUrl(""); }}
+                  >
+                    Voice Narration
+                  </button>
+                  <button 
+                    className={`flex-1 py-2 px-4 rounded-md font-medium text-sm transition-all ${audioMode === "bgm" ? "bg-neutral-700 text-white shadow" : "text-neutral-400 hover:text-white"}`}
+                    onClick={() => { setAudioMode("bgm"); setAudioUrl(""); }}
+                  >
+                    Background Music Only (Silent)
+                  </button>
+                </div>
+                
+                {audioMode === "bgm" && (
+                  <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 text-neutral-300 text-sm mb-6">
+                    <p className="mb-3">Select a background music track. Voice narration will be skipped.</p>
+                    <div className="flex flex-col space-y-2 sm:flex-row sm:space-y-0 sm:space-x-4">
+                      <label className="flex-1 flex items-center space-x-2 cursor-pointer bg-neutral-950 p-3 rounded-lg border border-neutral-800 hover:border-purple-500/50 transition-colors">
+                        <input type="radio" name="music_track" value="upbeat" checked={musicTrack === "upbeat"} onChange={() => { setMusicTrack("upbeat"); setAudioUrl(""); }} className="text-purple-500 focus:ring-purple-500 bg-neutral-900 border-neutral-700" />
+                        <span className="font-medium">Upbeat</span>
+                      </label>
+                      <label className="flex-1 flex items-center space-x-2 cursor-pointer bg-neutral-950 p-3 rounded-lg border border-neutral-800 hover:border-purple-500/50 transition-colors">
+                        <input type="radio" name="music_track" value="calm" checked={musicTrack === "calm"} onChange={() => { setMusicTrack("calm"); setAudioUrl(""); }} className="text-purple-500 focus:ring-purple-500 bg-neutral-900 border-neutral-700" />
+                        <span className="font-medium">Calm</span>
+                      </label>
+                      <label className="flex-1 flex items-center space-x-2 cursor-pointer bg-neutral-950 p-3 rounded-lg border border-neutral-800 hover:border-purple-500/50 transition-colors">
+                        <input type="radio" name="music_track" value="corporate" checked={musicTrack === "corporate"} onChange={() => { setMusicTrack("corporate"); setAudioUrl(""); }} className="text-purple-500 focus:ring-purple-500 bg-neutral-900 border-neutral-700" />
+                        <span className="font-medium">Corporate</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+
                 <div className="bg-neutral-950 border border-neutral-800 rounded-xl p-8 flex flex-col items-center justify-center min-h-48">
                   <div className="w-16 h-16 bg-purple-600/20 rounded-full flex items-center justify-center mb-6 animate-pulse">
                     <svg className="w-8 h-8 text-purple-400" fill="currentColor" viewBox="0 0 20 20"><path d="M18 3a1 1 0 00-1.196-.98l-10 2A1 1 0 006 5v9.114A4.369 4.369 0 005 14c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V7.82l8-1.6v5.894A4.37 4.37 0 0015 12c-1.657 0-3 .895-3 2s1.343 2 3 2 3-.895 3-2V3z"></path></svg>
                   </div>
-                  {audioUrl && (
+                  
+                  {!audioUrl ? (
+                    <button 
+                      onClick={handleGenerateVoice}
+                      disabled={isGenerating}
+                      className="bg-neutral-800 hover:bg-neutral-700 text-white font-medium py-2 px-6 rounded-lg transition-all"
+                    >
+                      {isGenerating ? "Processing..." : (audioMode === "voice" ? "Generate Voice" : "Prepare Audio")}
+                    </button>
+                  ) : (
                     <audio controls src={audioUrl} className="w-full max-w-md bg-neutral-900 rounded-full" />
                   )}
                 </div>
@@ -301,16 +431,17 @@ export default function Home() {
                 <div className="flex space-x-4">
                   <button 
                     onClick={handleGenerateVoice}
-                    disabled={isGenerating}
-                    className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white font-medium py-3 px-6 rounded-lg transition-all"
+                    disabled={isGenerating || !audioUrl}
+                    className="flex-1 bg-neutral-800 hover:bg-neutral-700 text-white font-medium py-3 px-6 rounded-lg transition-all disabled:opacity-50"
                   >
-                    {isGenerating ? "Regenerating..." : "Try Again"}
+                    {isGenerating ? "Processing..." : "Regenerate"}
                   </button>
                   <button 
                     onClick={() => setStep(4)}
-                    className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-medium py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transition-all"
+                    disabled={!audioUrl}
+                    className="flex-1 bg-purple-600 hover:bg-purple-500 text-white font-medium py-3 px-6 rounded-lg shadow-lg hover:shadow-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                   >
-                    Approve Voice
+                    Approve Audio
                   </button>
                 </div>
               </div>
@@ -321,7 +452,7 @@ export default function Home() {
               <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500 text-center py-8">
                 <h2 className="text-3xl font-bold mb-2">Ready to Render</h2>
                 <p className="text-neutral-400 mb-8 max-w-md mx-auto">
-                  Your script and voice are approved. Click below to generate the final video with visual effects and text overlays.
+                  Your script and audio are approved. Click below to generate the final video with visual effects and text overlays.
                 </p>
                 
                 {!isGenerating ? (
@@ -354,7 +485,7 @@ export default function Home() {
                 
                 <div className="bg-black rounded-xl overflow-hidden border border-neutral-800 shadow-2xl">
                   {videoUrl && (
-                    <video controls src={videoUrl} className="w-full aspect-video object-contain" poster={imagePreview}></video>
+                    <video controls src={videoUrl} className="w-full aspect-video object-contain" poster={inputType === "image" ? imagePreview : undefined}></video>
                   )}
                 </div>
 

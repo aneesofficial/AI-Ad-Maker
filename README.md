@@ -140,6 +140,7 @@ AI-Ad-Maker-For-Small-Shops/
 - Powered by **Google Gemini** for intelligent copy generation.
 - Voiceovers by **Microsoft Edge-TTS**.
 - Video processing by **FFmpeg**.
+- Background music tracks sourced from **Pixabay Music** under the Pixabay License (free for commercial use, no attribution required).
 
 ---
 *A Gen AI Mentorship Project*
